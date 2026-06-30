@@ -39,10 +39,12 @@ backtest (`as_of`).
 
 ---
 
-## 2. Three layers — and two different meanings of "resolver"
+## 2. Three layers — identity vs. selection "resolution"
 
-The word "resolver" means two unrelated things; keeping them distinct is the
-key to the design.
+"Resolve" is overloaded across these packages (see the **Terminology** glossary
+at the end). The primary axis — and the one this design hinges on — is
+**identity** resolution vs. **selection** resolution. Keeping them distinct is
+the key to the layering.
 
 | | **identity resolver** (security-universe) | **selection resolver** (this package) |
 |---|---|---|
@@ -62,7 +64,7 @@ StrikeSelection ──► [chain + select_contract] ──► concrete contract 
 `Security` is the **output** of selection, never the thing performing it. A
 description is not yet a `Security`; you can't ask a `Security` to resolve a
 strike. This is why market-data I/O must **not** live inside `Security` /
-security-universe (whose Non-Goals and resolver contract forbid I/O), but inside
+security-universe (whose Non-Goals and identity-resolver contract forbid I/O), but inside
 an injected source one level up.
 
 ---
@@ -86,7 +88,7 @@ Three importable units, one direction of dependency:
 │   models.py (ResolvedLeg)│     │   MdsRedisSource    (lives in zts shared)│
 │   protocol.py           │      │   RoutingSource / CompositeSource       │
 │   select.py  (PURE)     │      │   ─► emit Security objects via the      │
-│   structure_resolver.py │      │      injected identity ChainResolver     │
+│   structure_resolver.py │      │      injected identity ResolverChain     │
 │   PURE kernel           │      └────────────────────────────────────────┘
 └───────────────────────┘
 ```
@@ -269,7 +271,7 @@ segment only if a product lists both on one date.
   `ES: {settlement_type: physical, contract_multiplier: 50}`), and stores
   `metadata = {native_symbol, product_code, underlying_future}` so the object is
   **non-lossy**.
-- Wire first in `ChainResolver` (most specific: `./`-prefixed, spaced).
+- Wire first in `ResolverChain` (most specific: `./`-prefixed, spaced).
 
 ### 7.4 Required tests
 
@@ -471,7 +473,7 @@ deletes the strangler's residue that would otherwise become permanent:
 | both ids coexisting in Redis/DB | gone |
 
 Bonus only big-bang unlocks: **`CanonicalSymbol` dissolves** — its `from_tt`
-parsing is what the security-universe resolvers already do; it collapses to a
+parsing is what the security-universe identity resolvers already do; it collapses to a
 thin `to_tt(security)` + the registry (now an optional cache).
 
 Order:
@@ -481,7 +483,7 @@ Order:
 2. Extract `select_contract`; repoint sources at it (parity test vs the existing
    `StructureBuilder` oracle).
 3. `ResolvedLeg` carries `Security`; sources build `Security` via an injected
-   `ChainResolver`. No compat shims.
+   `ResolverChain`. No compat shims.
 4. Move `OrderLeg` assembly to the OMS edge; collapse `CanonicalSymbol` to
    `to_tt(security)`.
 5. Add `MassiveSource` (`[massive]`) and `BrokerSource` (`[broker]`,
@@ -518,3 +520,34 @@ You can keep the proto field name and just change its value semantics — no
   primary+fallback on `NO_CHAIN`? Leaning routing-by-type for determinism.
 - **`security_id` for combos/futures spreads** — TT `contracts.type = combo`;
   out of initial scope.
+
+---
+
+## 15. Terminology — "resolve" is overloaded; always qualify
+
+"Resolve"/"resolver" names five distinct operations across these packages. The
+**verb** "resolve X" is fine and idiomatic; the **bare noun "resolver" is
+banned** — always qualify it (identity resolver, structure resolver, …).
+
+| Sense | Means | Names | Package |
+|---|---|---|---|
+| **Identity resolution** | symbol → `Security` + `security_id` | `*SecurityIdResolver`, `SecurityIdResolver` (protocol), `ResolverChain` (composite) | security-universe |
+| **Selection resolution** | `StrikeSelection` description → concrete contract | `select_contract` (picker), `StructureResolver` (composer), `OptionResolver` (port), `resolve_leg` / `resolve_structure` | contract-resolver |
+| **Lookup (round-trip)** | id / symbol → broker symbol | `*Lookup` (`ActiveContractLookup`, `FutureOptionSymbolLookup`), `SymbolRegistry.lookup` | both |
+| **Universe resolution** | include/exclude query → `list[Security]` | `UniverseRegistry.resolve(...)` | security-universe |
+| **Expiration resolution** | DTE → calendar date | `resolve_expiration_for_dte` | zts shared |
+
+Conventions:
+
+- **Never write bare "resolver."** Use *identity resolver* (sense 1) or
+  *structure / selection resolver* (sense 2). The bare word is ambiguous between
+  the two layers that compose in §2.
+- **Prefer a non-"resolver" noun for new components**: a *picker* / *selector*
+  (`select_contract`), a *composer* (`StructureResolver` composes legs), a
+  *lookup* (`*Lookup`). Reserve the `Resolver` suffix for the identity layer.
+- **`ResolverChain` is a chain-of-responsibility over identity resolvers — NOT an
+  option chain.** (Renamed from `ChainResolver` precisely to remove that
+  collision with `OptionChainPopulator` / `resolves_chains` / "fetch the chain.")
+- **Two different "Registry" objects exist**: security-universe's
+  `UniverseRegistry` (set membership, sense 4) and zts's `SymbolRegistry`
+  (symbol lookup, sense 3). Never refer to "the registry" unqualified.
