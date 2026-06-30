@@ -29,7 +29,7 @@ massive = [
 # BrokerSource — TastyTrade REST (chain structure + order symbol) ⊕ DXLink (greeks/quotes). Covers OF and cold chains.
 broker = [
     "httpx>=0.26.0",
-    "websockets>=12.0",
+    "dxlink-client[tastytrade]",
 ]
 
 [project.urls]
@@ -38,8 +38,9 @@ Repository = "https://github.com/szagar/contract-resolver"
 Issues = "https://github.com/szagar/contract-resolver/issues"
 
 [tool.uv.sources]
-# Co-developed sibling. Swap for a published version once both stabilize.
+# Co-developed siblings. Swap for published versions once they stabilize.
 security-universe = { path = "../security-universe" }
+dxlink-client = { path = "../dxlink-client" }
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]
@@ -52,7 +53,13 @@ dev = [
     "pytest-asyncio>=1.0",
     "ruff>=0.15.20",
     "types-pyyaml>=6.0.12.20260518",
+    # for BrokerSource tests (mocked REST) + live broker tests
+    "httpx>=0.26.0",
+    "dxlink-client[tastytrade]",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "tastytrade: hits the live TastyTrade feed (requires TASTYTRADE_* creds in .env).",
+]

@@ -5,18 +5,55 @@ delta / premium / offset / absolute price, an expiration by DTE) into a
 concrete, identified option contract — source-agnostic, backtest-safe, and
 importable with no Redis / MDS / broker dependency in the pure core.
 
-Layering (one direction of dependency):
+    from contract_resolver import (
+        OptionStructure, StructureLeg, StrikeSelection, ExpirationSpec,
+        StructureResolver, select_contract,
+    )
+    from contract_resolver.sources import StaticSource          # offline / backtest
+    from contract_resolver.sources.broker import BrokerSource   # live TT [broker extra]
 
-    security-universe  (identity: Security, security_id, symbology resolvers)
-            ▲
-    contract-resolver  (description + pure picker + composer + pluggable sources)
+    resolution = await StructureResolver(source).resolve(structure)
 
-The pure core (description, ``select_contract``, ``StructureResolver``) does no
-I/O. Market data enters only through an injected ``MarketDataSource`` — Massive
-for equity/index options, a TastyTrade broker source for futures options, an
-MDS/Redis source for the warm live path.
-
-Status: design / pre-implementation. See ``docs/plans/contract-resolver-design.md``.
+Design: docs/plans/contract-resolver-design.md.
 """
 
+from .description import ExpirationSpec, OptionStructure, StrikeSelection, StructureLeg
+from .errors import StructureResolutionError
+from .models import ContractRow, Coverage, ResolvedLeg
+from .outcomes import (
+    LegMatch,
+    LegResolution,
+    NoMatch,
+    NoMatchReason,
+    ResolvedStructure,
+    StructureResolution,
+)
+from .protocol import OptionResolver
+from .select import select_contract
+from .structure_resolver import StructureResolver
+
 __version__ = "0.1.0"
+
+__all__ = [
+    # description
+    "StrikeSelection",
+    "ExpirationSpec",
+    "StructureLeg",
+    "OptionStructure",
+    # resolution
+    "select_contract",
+    "StructureResolver",
+    "OptionResolver",
+    # types
+    "ContractRow",
+    "ResolvedLeg",
+    "Coverage",
+    # outcomes
+    "LegMatch",
+    "NoMatch",
+    "NoMatchReason",
+    "LegResolution",
+    "ResolvedStructure",
+    "StructureResolution",
+    "StructureResolutionError",
+]
