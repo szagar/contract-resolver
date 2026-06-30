@@ -6,12 +6,13 @@ readme = "README.md"
 authors = [
     { name = "Stephen Zagar", email = "szagar@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = "MIT"
 keywords = ["trading", "options", "option-chain", "resolver", "futures-options"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
@@ -39,8 +40,10 @@ Issues = "https://github.com/szagar/contract-resolver/issues"
 
 [tool.uv.sources]
 # Co-developed siblings. Swap for published versions once they stabilize.
-security-universe = { path = "../security-universe" }
-dxlink-client = { path = "../dxlink-client" }
+# Editable to match the zts-massive workspace root, which vendors all three as
+# editable path deps — uv requires the source declarations to agree.
+security-universe = { path = "../security-universe", editable = true }
+dxlink-client = { path = "../dxlink-client", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]
