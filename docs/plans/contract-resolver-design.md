@@ -380,6 +380,12 @@ amortizes — warm processes should prefer `MdsRedisSource`); **bound** the
 subscription to a strike window; **cache** REST structure per `(product,
 expiration)` for the session.
 
+**The DXLink half is spec'd separately** — the current MDS usage has robustness
+gaps (silent per-subscription stalls, fixed-order parsing, fixed-sequence
+handshake). See [`dxlink-robust-approach.md`](dxlink-robust-approach.md) for the
+`shared/dxlink/` design (reactive handshake, parse-by-`FEED_CONFIG.eventFields`,
+staleness watchdog, bounded `collect_greeks`), grounded in live protocol testing.
+
 ---
 
 ## 9. `to_tt` and the native-symbol story (no registry in the hot path)
