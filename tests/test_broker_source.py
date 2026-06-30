@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 import httpx
-from dxlink_client import GreeksEvent
+from dxlink_client import GreeksEvent, QuoteEvent
 from dxlink_client.config import TastytradeSettings
 from dxlink_client.providers.tastytrade import TastytradeTokenProvider
 
@@ -91,6 +92,43 @@ async def test_equity_strike_selection_no_market_data() -> None:
     assert isinstance(out, LegMatch)
     assert out.option.security_id == "option:SPY:2026-07-03:call:653"
     assert out.option.strike == 653
+    await client.aclose()
+
+
+class _EnrichConn(_FakeConn):
+    """Adds the subscribe/next_event surface so enrich can fetch one quote."""
+
+    def __init__(self, deltas: dict[str, float], quote: QuoteEvent) -> None:
+        super().__init__(deltas)
+        self._quote = quote
+        self._sent = False
+
+    async def subscribe(self, event_type, symbols, **kw) -> None:
+        pass
+
+    async def unsubscribe(self, event_type, symbols) -> None:
+        pass
+
+    async def next_event(self, timeout=None):
+        if not self._sent:
+            self._sent = True
+            return self._quote
+        return None
+
+
+async def test_enrich_completes_selected_leg_with_price() -> None:
+    client = _client()
+    deltas = {".SPY260703C650": 0.55, ".SPY260703C653": 0.30, ".SPY260703C656": 0.12}
+    quote = QuoteEvent(".SPY260703C653", bid_price=5.0, ask_price=5.2)  # the picked strike
+    src = BrokerSource(
+        _provider(client), http_client=client,
+        connection=_EnrichConn(deltas, quote), enrich=True,
+    )
+    out = await src.resolve_leg("SPY", ExpirationSpec(dte=3), "call", StrikeSelection("delta", target=0.30))
+    assert isinstance(out, LegMatch)
+    assert out.option.strike == 653
+    assert out.option.delta is not None          # delta from candidate greeks
+    assert out.option.mid == Decimal("5.1")      # price from the enrich quote
     await client.aclose()
 
 

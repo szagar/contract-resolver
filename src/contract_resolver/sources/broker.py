@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 import httpx
-from dxlink_client import DXLinkConnection, QuoteEvent
+from dxlink_client import DXLinkConnection, GreeksEvent, QuoteEvent
 from dxlink_client.providers.tastytrade import TastytradeTokenProvider
 from security_universe.resolvers import ResolverChain
 
@@ -60,7 +60,12 @@ class BrokerSource:
         http_client: httpx.AsyncClient | None = None,
         greeks_timeout: float = 3.0,
         quote_timeout: float = 3.0,
+        enrich: bool = False,
     ) -> None:
+        # enrich=True completes the *selected* leg with both price and delta
+        # (one extra quote/greeks fetch for the single picked contract) so a
+        # resolved leg carries everything an order needs. Default False keeps
+        # strike/offset selection pure-REST and delta-selection greeks-only.
         self._provider = token_provider
         self._id = id_resolver or ResolverChain.default()
         self._api_base = api_base
@@ -69,6 +74,7 @@ class BrokerSource:
         self._owns_http = http_client is None
         self._greeks_timeout = greeks_timeout
         self._quote_timeout = quote_timeout
+        self._enrich = enrich
 
     @property
     def name(self) -> str:
@@ -116,6 +122,8 @@ class BrokerSource:
                 REASON_BY_METHOD.get(selection.method, NoMatchReason.NO_CHAIN),
                 f"no match for {selection.method}",
             )
+        if self._enrich:
+            picked = await self._complete_leg(picked)
         return LegMatch(to_resolved_leg(picked, self._id, self.name, None))
 
     # ------------------------------------------------------------------ #
@@ -230,6 +238,43 @@ class BrokerSource:
             else:
                 out.append(r)
         return out
+
+    async def _complete_leg(self, picked: ContractRow) -> ContractRow:
+        """Fetch the missing price and/or delta for the single selected contract,
+        so the resolved leg carries both (for order pricing + risk)."""
+        sym = picked.streamer_symbol
+        delta, bid, ask, mid = picked.delta, picked.bid, picked.ask, picked.mid
+        need_greeks, need_quote = delta is None, mid is None
+        if not sym or not (need_greeks or need_quote):
+            return picked
+        import time
+
+        conn, owned = await self._connection()
+        try:
+            if need_greeks:
+                await conn.subscribe("Greeks", [sym])
+            if need_quote:
+                await conn.subscribe("Quote", [sym])
+            deadline = time.monotonic() + self._quote_timeout
+            while (need_greeks and delta is None) or (need_quote and mid is None):
+                if time.monotonic() >= deadline:
+                    break
+                ev = await conn.next_event(timeout=deadline - time.monotonic())
+                if ev is None:
+                    break
+                if isinstance(ev, GreeksEvent) and ev.event_symbol == sym and ev.delta is not None:
+                    delta = _dec(ev.delta)
+                elif isinstance(ev, QuoteEvent) and ev.event_symbol == sym:
+                    bid, ask = _dec(ev.bid_price), _dec(ev.ask_price)
+                    mid = (bid + ask) / 2 if bid is not None and ask is not None else None
+            if need_greeks:
+                await conn.unsubscribe("Greeks", [sym])
+            if need_quote:
+                await conn.unsubscribe("Quote", [sym])
+        finally:
+            if owned:
+                await conn.close()
+        return replace(picked, delta=delta, bid=bid, ask=ask, mid=mid)
 
     async def _connection(self) -> tuple[DXLinkConnection, bool]:
         if self._conn is not None:
