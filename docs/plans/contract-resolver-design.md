@@ -504,6 +504,33 @@ Order:
 You can keep the proto field name and just change its value semantics — no
 `.proto` schema change.
 
+### Provenance gate at the OMS submit edge (deferred — wire at step 4)
+
+Contract selection is critical: a synthetic / backtest / delayed source must
+never select contracts for a real order. `contract-resolver` already ships the
+enforcement primitives — `StructureResolver(allowed_sources={"broker"})` (fail
+fast at resolve) and `guards.require_sources(resolution, {"broker"})` (assert
+every resolved leg's `source` at the irreversible boundary). **These are not yet
+wired into zts**, because the live bot→OMS path still uses the predecessor stack
+(`StructureResolver(MdsRedisSource)` in `BotContext.resolve_structure`), whose
+bot-facing `ResolvedStructure.populated_options` are `PopulatedOption` rows that
+**drop the `source` field** — there is nothing to assert on.
+
+So the gate lands as part of the migration, at **step 4** (when `OrderLeg`
+assembly moves to the OMS edge and the bot path produces a
+`contract_resolver.StructureResolution`):
+
+```python
+res = await StructureResolver(BrokerSource(...), allowed_sources={"broker"}).resolve(structure)
+require_sources(res, {"broker"})          # mandatory, before OrderLeg assembly / submit
+```
+
+Make `require_sources` a non-optional step in the submit path — the analogue of
+the existing risk gates. Until the migration, the predecessor stack's own
+`ResolvedLeg.source` (`"mds_redis"`) would be the thing to gate on; that was
+**deliberately deferred** rather than bolt a parallel gate onto the stack the
+migration replaces.
+
 ---
 
 ## 13. Non-goals
