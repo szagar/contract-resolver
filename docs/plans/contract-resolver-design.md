@@ -268,9 +268,10 @@ segment only if a product lists both on one date.
   `security_id`, `short_name`, sets `underlying=ESU6`, `root_symbol=ES`,
   `option_root=E1CN6`, enriches `settlement_type`/`contract_multiplier` from a
   packaged `future_option_rules.yaml` (keyed by product root, e.g.
-  `ES: {settlement_type: physical, contract_multiplier: 50}`), and stores
-  `metadata = {native_symbol, product_code, underlying_future}` so the object is
-  **non-lossy**.
+  `ES: {settlement_type: physical, contract_multiplier: 50}`), and sets
+  `order_symbol = symbol` (the opaque TT order symbol) so the object is
+  **non-lossy** — the product code already lands in `option_root`, the
+  underlying future in `underlying`.
 - Wire first in `ResolverChain` (most specific: `./`-prefixed, spaced).
 
 ### 7.4 Required tests
@@ -341,7 +342,7 @@ routes here.
     select_contract(rows_with_greeks, selection) → row;  TT symbol = row.call
 
 5. Security via FutureOptionSecurityIdResolver(symbol=row.call)
-     → security_id + metadata.native_symbol = row.call
+     → security_id + order_symbol = row.call  (the source is its authoritative populator)
 ```
 
 Key facts (verified against TT docs + zts code):
@@ -397,12 +398,14 @@ redundant for *identity*, required for *naming*). Resolution:
 
 ```python
 # Normal case — the Security carries it (captured during selection, §8.2 step 3/5):
-to_tt(sec) -> sec.metadata["native_symbol"]      # "./ESU6 E1CN6 260701C6325"
+to_tt(sec) -> sec.order_symbol      # "./ESU6 E1CN6 260701C6325"
 ```
 
-`native_symbol` is **the resolution chain-read, retained** — it falls out of the
+`order_symbol` is **the resolution chain-read, retained** — it falls out of the
 `/futures-option-chains/.../nested` response (`.call`/`.put`) that selection
-already makes. It is *not* a second data source.
+already makes. It is *not* a second data source. (`symbol` is the as-supplied
+input and is not assumed to be the order symbol — see the `Security.symbol`
+contract; the source stamps `order_symbol` authoritatively from the chain row.)
 
 The injected `FutureOptionSymbolLookup` "fallback" is the **same chain read,
 repeated** for a bare id that was never resolved here (a hand-typed id, an
@@ -414,8 +417,8 @@ to_tt_from_id("future_option:ES:U6:2026-07-01:call:6325")
 ```
 
 So: **one authoritative source** (the nested chain endpoint), read once during
-selection. "Carry `native_symbol`" = keep that read; "fallback" = re-resolve.
-Persisting `native_symbol` alongside the id (exactly as zts already stores the TT
+selection. "Carry `order_symbol`" = keep that read; "fallback" = re-resolve.
+Persisting `order_symbol` alongside the id (exactly as zts already stores the TT
 `symbol` column next to `canonical_symbol`) makes the fallback near-dead code.
 The Redis registry (`reg:c2tt`) demotes from authority to an **optional cache**
 of the chain endpoint — its cold-window concern disappears.
