@@ -27,6 +27,21 @@ source — or injecting `as_of` for backtest — changes nothing above it.
 The full design lives in
 [`docs/plans/contract-resolver-design.md`](docs/plans/contract-resolver-design.md).
 
+## Latency
+
+End-to-end `BrokerSource.resolve_leg` against live TastyTrade, warm connection
+(`examples/benchmark_latency.py`; machine/location dependent):
+
+| selection path | latency (min/median ms) |
+|---|---|
+| pure REST (strike / offset / absolute_price) | ~60–80 |
+| + greeks (delta) | ~95–115 |
+| + greeks + quote (`enrich=True`) | ~115–185 |
+
+Measured across stock (SPY), index (SPX), and futures (`/ES`). Pure-REST
+resolution needs no market data; delta adds a bounded greeks fetch; `enrich`
+completes the picked leg with its price.
+
 ## Status
 
 Pre-implementation. The package is scaffolded; the design doc is the
