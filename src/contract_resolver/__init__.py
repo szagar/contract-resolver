@@ -19,6 +19,7 @@ Design: docs/plans/contract-resolver-design.md.
 
 from .description import ExpirationSpec, OptionStructure, StrikeSelection, StructureLeg
 from .errors import StructureResolutionError
+from .guards import require_sources
 from .models import ContractRow, Coverage, ResolvedLeg
 from .outcomes import (
     LegMatch,
@@ -44,6 +45,7 @@ __all__ = [
     "select_contract",
     "StructureResolver",
     "OptionResolver",
+    "require_sources",
     # types
     "ContractRow",
     "ResolvedLeg",

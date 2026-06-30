@@ -20,7 +20,11 @@ from ..outcomes import LegMatch, LegResolution, NoMatch, NoMatchReason
 from ..select import select_contract
 
 _DEFAULT_COVERAGE = Coverage(
-    instrument_types=frozenset({"Equity Option", "Index Option", "Future Option"})
+    instrument_types=frozenset({"Equity Option", "Index Option", "Future Option"}),
+    # In-memory / synthetic: NOT a live exchange chain. Marking this lets a live
+    # order path refuse it (it can fabricate non-listed contracts; a broker chain
+    # cannot). See StructureResolver(allowed_sources=...) and guards.require_sources.
+    realtime=False,
 )
 
 

@@ -27,12 +27,25 @@ from .protocol import OptionResolver
 
 
 class StructureResolver:
-    def __init__(self, resolver: OptionResolver) -> None:
+    def __init__(
+        self, resolver: OptionResolver, *, allowed_sources: set[str] | None = None
+    ) -> None:
+        """``allowed_sources`` pins which source may resolve. Pass e.g.
+        ``{"broker"}`` on the live order path so a misconfigured / synthetic
+        source (StaticSource, a backtest feed) cannot select contracts —
+        ``resolve`` raises loudly instead of silently using it. ``None`` (default)
+        allows any source (tests / backtest)."""
         self._resolver = resolver
+        self._allowed_sources = allowed_sources
 
     async def resolve(
         self, structure: OptionStructure, *, as_of: datetime | None = None
     ) -> StructureResolution:
+        if self._allowed_sources is not None and self._resolver.name not in self._allowed_sources:
+            raise StructureResolutionError(
+                f"source {self._resolver.name!r} is not in allowed_sources "
+                f"{sorted(self._allowed_sources)}; refusing to resolve contracts"
+            )
         cov = self._resolver.coverage()
         if not cov.resolves_chains:
             return self._fail(NoMatchReason.UNSUPPORTED_CAPABILITY, "source does not resolve chains")
