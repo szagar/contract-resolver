@@ -39,11 +39,13 @@ Repository = "https://github.com/szagar/contract-resolver"
 Issues = "https://github.com/szagar/contract-resolver/issues"
 
 [tool.uv.sources]
-# Co-developed siblings. Swap for published versions once they stabilize.
-# Editable to match the zts-massive workspace root, which vendors all three as
-# editable path deps — uv requires the source declarations to agree.
-security-universe = { path = "../security-universe", editable = true }
-dxlink-client = { path = "../dxlink-client", editable = true }
+# Co-developed siblings, pinned to their main branch (not path deps) so this repo
+# resolves cleanly when consumed as a git dependency: a relative path dep only
+# works in a co-checkout layout, which a git/CI consumer (e.g. zts-massive CI)
+# doesn't have. uv resolves each branch HEAD to a pinned commit in the consumer's
+# lockfile. Swap for published versions once they stabilize.
+security-universe = { git = "https://github.com/szagar/security-universe.git", branch = "main" }
+dxlink-client = { git = "https://github.com/szagar/dxlink-client.git", branch = "main" }
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]
