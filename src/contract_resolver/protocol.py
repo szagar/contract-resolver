@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal, Mapping, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Mapping, Protocol, Sequence, runtime_checkable
 
 if TYPE_CHECKING:
-    from .description import ExpirationSpec, StrikeSelection
+    from .description import ExpirationSpec, StrikeListedConstraint, StrikeSelection
     from .models import Coverage, ResolvedLeg
     from .outcomes import LegResolution
 
@@ -33,8 +33,12 @@ class OptionResolver(Protocol):
         *,
         siblings: Mapping[str, "ResolvedLeg"] | None = None,
         as_of: datetime | None = None,
+        constraints: Sequence["StrikeListedConstraint"] | None = None,
     ) -> "LegResolution":
         """Resolve one leg. ``siblings`` carries already-resolved legs by role
         (for ``offset_from``). ``as_of=None`` means "now"; historical sources
-        require it, live sources reject a past value."""
+        require it, live sources reject a past value. ``constraints`` (derived
+        by the StructureResolver for calendarized parents) restrict candidates
+        to strikes also listed at each constraint's expiration — see
+        ``StrikeListedConstraint``."""
         ...

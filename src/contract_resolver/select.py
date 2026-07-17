@@ -19,6 +19,32 @@ def _find_strike(candidates: Sequence[ContractRow], strike: Decimal) -> Contract
     return next((c for c in candidates if c.strike == strike), None)
 
 
+def filter_listed(
+    candidates: Sequence[ContractRow],
+    listed: set[Decimal],
+    offset: float,
+) -> list[ContractRow]:
+    """Candidates whose ``strike + offset`` is in ``listed`` — the
+    ``StrikeListedConstraint`` filter (sources resolve the constraint's
+    expiration to its listed-strike set; this applies it)."""
+    shift = Decimal(str(offset))
+    return [c for c in candidates if c.strike + shift in listed]
+
+
+def no_match_detail(
+    selection: StrikeSelection, siblings: Mapping[str, Decimal] | None = None
+) -> str:
+    """Human detail for a failed pick. ``offset_from`` names the exact strike it
+    needed — 'no match for offset_from' alone reads like a tolerance problem
+    when the real cause is a strike the expiration doesn't list."""
+    if selection.method == "offset_from":
+        ref = (siblings or {}).get(selection.role or "")
+        if ref is not None:
+            want = ref + Decimal(str(selection.offset or 0))
+            return f"no match for offset_from (strike {want} not listed in this expiration)"
+    return f"no match for {selection.method}"
+
+
 def select_contract(
     candidates: Sequence[ContractRow],
     selection: StrikeSelection,

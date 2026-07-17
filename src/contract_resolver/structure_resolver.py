@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime
 
-from .description import OptionStructure, StructureLeg
+from .description import OptionStructure, StrikeListedConstraint, StructureLeg
 from .errors import StructureResolutionError
 from .models import ResolvedLeg
 from .outcomes import (
@@ -56,15 +56,19 @@ class StructureResolver:
             )
 
         self._validate_graph(structure)  # circular offset_from is a programmer error
+        constraints = self._parent_constraints(structure)
 
         resolved: dict[str, ResolvedLeg] = {}
         failures: list[NoMatch] = []
 
-        # Pass 1: parents (everything that isn't offset_from).
+        # Pass 1: parents (everything that isn't offset_from), calendar-aware:
+        # a parent referenced by an offset_from child in ANOTHER expiration only
+        # picks strikes the child's expiration also lists.
         for leg in structure.legs:
             if leg.strike_selection.method == "offset_from":
                 continue
-            self._absorb(await self._one(structure, leg, resolved, as_of), leg, resolved, failures)
+            outcome = await self._one(structure, leg, resolved, as_of, constraints.get(leg.role))
+            self._absorb(outcome, leg, resolved, failures)
 
         # Pass 2: offset_from legs — parents are now resolved.
         for leg in structure.legs:
@@ -76,7 +80,8 @@ class StructureResolver:
                     NoMatch(NoMatchReason.SIBLING_UNRESOLVED, f"parent {parent!r} unresolved", leg.role)
                 )
                 continue
-            self._absorb(await self._one(structure, leg, resolved, as_of), leg, resolved, failures)
+            outcome = await self._one(structure, leg, resolved, as_of, constraints.get(leg.role))
+            self._absorb(outcome, leg, resolved, failures)
 
         if failures:
             return StructureResolution(False, None, tuple(failures))
@@ -88,14 +93,42 @@ class StructureResolver:
         leg: StructureLeg,
         resolved: dict[str, ResolvedLeg],
         as_of: datetime | None,
+        constraints: tuple[StrikeListedConstraint, ...] | None = None,
     ) -> LegResolution:
         exp = leg.expiration or structure.expiration
         if exp is None:
             raise StructureResolutionError(f"leg {leg.role!r} has no expiration and structure has no default")
         return await self._resolver.resolve_leg(
             structure.underlying, exp, leg.option_type, leg.strike_selection,
-            siblings=dict(resolved), as_of=as_of,
+            siblings=dict(resolved), as_of=as_of, constraints=constraints,
         )
+
+    @staticmethod
+    def _parent_constraints(
+        structure: OptionStructure,
+    ) -> dict[str, tuple[StrikeListedConstraint, ...]]:
+        """role -> constraints for parents referenced by an ``offset_from`` child
+        in a different expiration (calendarized structures). Same-expiration
+        children need no constraint — parent and child pick from one chain."""
+        legs_by_role = {leg.role: leg for leg in structure.legs}
+        out: dict[str, list[StrikeListedConstraint]] = {}
+        for leg in structure.legs:
+            sel = leg.strike_selection
+            if sel.method != "offset_from" or sel.role not in legs_by_role:
+                continue
+            child_exp = leg.expiration or structure.expiration
+            parent = legs_by_role[sel.role]
+            parent_exp = parent.expiration or structure.expiration
+            if child_exp is None or child_exp == parent_exp:
+                continue
+            out.setdefault(sel.role, []).append(
+                StrikeListedConstraint(
+                    expiration=child_exp,
+                    option_type=leg.option_type,
+                    offset=sel.offset or 0.0,
+                )
+            )
+        return {role: tuple(cs) for role, cs in out.items()}
 
     @staticmethod
     def _absorb(

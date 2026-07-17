@@ -17,7 +17,13 @@ importable with no Redis / MDS / broker dependency in the pure core.
 Design: docs/plans/contract-resolver-design.md.
 """
 
-from .description import ExpirationSpec, OptionStructure, StrikeSelection, StructureLeg
+from .description import (
+    ExpirationSpec,
+    OptionStructure,
+    StrikeListedConstraint,
+    StrikeSelection,
+    StructureLeg,
+)
 from .errors import StructureResolutionError
 from .guards import require_sources
 from .models import ContractRow, Coverage, ResolvedLeg
@@ -41,6 +47,7 @@ __all__ = [
     "ExpirationSpec",
     "StructureLeg",
     "OptionStructure",
+    "StrikeListedConstraint",
     # resolution
     "select_contract",
     "StructureResolver",

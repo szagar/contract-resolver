@@ -85,6 +85,79 @@ async def test_offset_from_parent_miss_fails_that_leg() -> None:
     assert reasons["long_put"] == "sibling_unresolved"
 
 
+FRONT = date(2026, 8, 7)
+BACK = date(2026, 8, 14)
+
+
+def _cal_row(otype: str, strike: int, exp: date, delta: str | None = None) -> ContractRow:
+    cp = "C" if otype == "call" else "P"
+    return ContractRow(
+        option_type=otype,
+        strike=Decimal(strike),
+        symbol=f"SPXW  {exp:%y%m%d}{cp}{strike * 1000:08d}",
+        expiration=exp,
+        delta=Decimal(delta) if delta else None,
+    )
+
+
+# Front weekly lists a 5-wide grid; the back weekly is coarser (no 7255) —
+# the real SPXW shape that made an unconstrained delta pick unresolvable.
+CAL_ROWS = [
+    _cal_row("put", 7250, FRONT, "0.30"),
+    _cal_row("put", 7255, FRONT, "0.25"),  # exact-delta pick, but not listed at BACK
+    _cal_row("put", 7260, FRONT, "0.21"),
+    _cal_row("put", 7250, BACK),
+    _cal_row("put", 7260, BACK),
+]
+
+
+def _put_calendar() -> OptionStructure:
+    return OptionStructure(
+        underlying="SPX",
+        legs=(
+            StructureLeg(
+                "short_put", "put", "short", StrikeSelection("delta", target=0.25),
+                expiration=ExpirationSpec(expiration_date=FRONT),
+            ),
+            StructureLeg(
+                "long_put_back", "put", "long",
+                StrikeSelection("offset_from", role="short_put", offset=0),
+                expiration=ExpirationSpec(expiration_date=BACK),
+            ),
+        ),
+    )
+
+
+async def test_calendar_parent_constrained_to_back_listed_strikes() -> None:
+    # Unconstrained, delta would pick 7255 (exact 0.25) — which the back
+    # expiration doesn't list, so offset_from would fail. The derived
+    # StrikeListedConstraint keeps the parent on {7250, 7260}; 7260 wins
+    # (|0.21-0.25| < |0.30-0.25|) and the calendar resolves.
+    res = await StructureResolver(StaticSource(CAL_ROWS)).resolve(_put_calendar())
+    assert res.ok, res.failures
+    legs = res.resolved.legs
+    assert legs["short_put"].strike == Decimal(7260)
+    assert legs["long_put_back"].strike == Decimal(7260)
+
+
+async def test_calendar_with_no_common_strikes_fails_the_parent() -> None:
+    rows = [r for r in CAL_ROWS if not (r.expiration == BACK)] + [_cal_row("put", 7000, BACK)]
+    res = await StructureResolver(StaticSource(rows)).resolve(_put_calendar())
+    assert not res.ok
+    reasons = {f.role: f.reason.value for f in res.failures}
+    assert reasons["short_put"] == "no_strike_in_tolerance"
+    assert reasons["long_put_back"] == "sibling_unresolved"
+
+
+async def test_same_expiration_offset_from_gets_no_constraint() -> None:
+    # The iron condor (all legs one expiration) resolves exactly as before —
+    # _parent_constraints must not manufacture constraints for same-expiry
+    # children (they pick from the same chain by construction).
+    res = await StructureResolver(StaticSource(ROWS)).resolve(_iron_condor())
+    assert res.ok, res.failures
+    assert res.resolved.legs["short_put"].strike == Decimal(6290)
+
+
 async def test_circular_offset_from_raises() -> None:
     struct = OptionStructure(
         underlying="SPX",

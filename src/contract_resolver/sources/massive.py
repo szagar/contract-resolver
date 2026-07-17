@@ -22,7 +22,7 @@ Requires the ``massive`` extra: ``contract-resolver[massive]`` (httpx).
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
@@ -30,11 +30,11 @@ from typing import Any, Literal
 import httpx
 from security_universe.resolvers import ResolverChain
 
-from ..description import ExpirationSpec, StrikeSelection
+from ..description import ExpirationSpec, StrikeListedConstraint, StrikeSelection
 from ..identity import REASON_BY_METHOD, to_resolved_leg
 from ..models import ContractRow, Coverage, ResolvedLeg
 from ..outcomes import LegMatch, LegResolution, NoMatch, NoMatchReason
-from ..select import select_contract
+from ..select import filter_listed, no_match_detail, select_contract
 
 _COVERAGE = Coverage(
     instrument_types=frozenset({"Equity Option", "Index Option"}),
@@ -102,6 +102,7 @@ class MassiveSource:
         *,
         siblings: Mapping[str, ResolvedLeg] | None = None,
         as_of: datetime | None = None,
+        constraints: Sequence[StrikeListedConstraint] | None = None,
     ) -> LegResolution:
         if underlying.startswith("/"):
             return NoMatch(NoMatchReason.UNSUPPORTED_INSTRUMENT, "Massive has no futures")
@@ -117,6 +118,21 @@ class MassiveSource:
         if not rows:
             return NoMatch(NoMatchReason.NO_CHAIN, f"empty {option_type} snapshot")
 
+        for c in constraints or ():
+            c_exp = await self._resolve_expiration(
+                ref_ticker, c.option_type, c.expiration, ref_date
+            )
+            if c_exp is None:
+                continue  # constraint expiration unresolvable — the child leg reports it
+            listed = await self._listed_strikes(ref_ticker, c_exp, c.option_type)
+            rows = filter_listed(rows, listed, c.offset)
+            if not rows:
+                return NoMatch(
+                    NoMatchReason.NO_STRIKE_IN_TOLERANCE,
+                    f"no {option_type} strike also listed at {c_exp} "
+                    "(offset_from sibling's expiration)",
+                )
+
         sib_strikes = {
             role: leg.security.strike
             for role, leg in (siblings or {}).items()
@@ -126,7 +142,7 @@ class MassiveSource:
         if picked is None:
             return NoMatch(
                 REASON_BY_METHOD.get(selection.method, NoMatchReason.NO_CHAIN),
-                f"no match for {selection.method}",
+                no_match_detail(selection, sib_strikes),
             )
         return LegMatch(to_resolved_leg(picked, self._id, self.name, as_of))
 
@@ -181,6 +197,30 @@ class MassiveSource:
         hi = spec.max_dte if spec.max_dte is not None else 10**9
         window = [e for e in exps if lo <= (e - ref_date).days <= hi]
         return window[0] if window else None  # earliest in range
+
+    async def _listed_strikes(
+        self, ref_ticker: str, expiration: date, contract_type: Literal["call", "put"]
+    ) -> set[Decimal]:
+        """Listed strikes at ``expiration`` from the reference contracts endpoint
+        (lighter than the snapshot chain — structure only, no market data)."""
+        strikes: set[Decimal] = set()
+        url: str | None = "/v3/reference/options/contracts"
+        params: dict | None = {
+            "underlying_ticker": ref_ticker,
+            "contract_type": contract_type,
+            "expiration_date": expiration.isoformat(),
+            "limit": 1000,
+        }
+        while url:
+            data = await self._get(url, params)
+            strikes.update(
+                Decimal(str(c["strike_price"]))
+                for c in data.get("results", [])
+                if c.get("strike_price") is not None
+            )
+            url = data.get("next_url")
+            params = None
+        return strikes
 
     async def _fetch_chain(
         self, asset: str, expiration: date, contract_type: Literal["call", "put"]

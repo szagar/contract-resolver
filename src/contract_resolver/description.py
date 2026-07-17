@@ -62,6 +62,23 @@ class ExpirationSpec:
 
 
 @dataclass(frozen=True)
+class StrikeListedConstraint:
+    """A derived (never authored) constraint on a parent leg's strike pick.
+
+    Attached by the ``StructureResolver`` when an ``offset_from`` child sits in
+    a DIFFERENT expiration than its parent (a calendarized structure): the
+    parent's strike ``S`` is only pickable if ``S + offset`` is a listed strike
+    at ``(expiration, option_type)``. Without it, a parent selected by delta can
+    land on a strike the child's expiration doesn't list (weekly chains often
+    have finer grids than later ones — e.g. SPXW 5-wide front vs 10/25-wide
+    back) and the child fails unresolvable."""
+
+    expiration: ExpirationSpec
+    option_type: Literal["call", "put"]
+    offset: float = 0.0
+
+
+@dataclass(frozen=True)
 class StructureLeg:
     role: str
     option_type: Literal["call", "put"]

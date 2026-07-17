@@ -24,11 +24,11 @@ from dxlink_client import DXLinkConnection, GreeksEvent, QuoteEvent
 from dxlink_client.providers.tastytrade import TastytradeTokenProvider
 from security_universe.resolvers import ResolverChain
 
-from ..description import ExpirationSpec, StrikeSelection
+from ..description import ExpirationSpec, StrikeListedConstraint, StrikeSelection
 from ..identity import REASON_BY_METHOD, to_resolved_leg
 from ..models import ContractRow, Coverage, ResolvedLeg
 from ..outcomes import LegMatch, LegResolution, NoMatch, NoMatchReason
-from ..select import select_contract
+from ..select import filter_listed, no_match_detail, select_contract
 
 _COVERAGE = Coverage(
     instrument_types=frozenset({"Future Option", "Future", "Equity Option", "Index Option"}),
@@ -92,6 +92,7 @@ class BrokerSource:
         *,
         siblings: Mapping[str, ResolvedLeg] | None = None,
         as_of: datetime | None = None,
+        constraints: Sequence[StrikeListedConstraint] | None = None,
     ) -> LegResolution:
         if as_of is not None:
             return NoMatch(NoMatchReason.STALE_OR_NO_AS_OF, "broker source is live-only")
@@ -103,6 +104,25 @@ class BrokerSource:
         rows = self._rows_for(exp, option_type, underlying)
         if not rows:
             return NoMatch(NoMatchReason.NO_CHAIN, f"no {option_type} candidates")
+
+        # Calendar-aware constraints (before any greeks/quotes attach so the
+        # subscription set only carries pickable strikes).
+        for c in constraints or ():
+            c_exp = self._pick_expiration(expirations, c.expiration)
+            if c_exp is None:
+                continue  # constraint expiration unresolvable — the child leg reports it
+            listed = {
+                Decimal(str(s["strike-price"]))
+                for s in c_exp["strikes"]
+                if s.get("call" if c.option_type == "call" else "put")
+            }
+            rows = filter_listed(rows, listed, c.offset)
+            if not rows:
+                return NoMatch(
+                    NoMatchReason.NO_STRIKE_IN_TOLERANCE,
+                    f"no {option_type} strike also listed at {c_exp['date']} "
+                    "(offset_from sibling's expiration)",
+                )
 
         if selection.method in ("delta", "atm_offset"):
             rows = await self._attach_greeks(rows)
@@ -120,7 +140,7 @@ class BrokerSource:
         if picked is None:
             return NoMatch(
                 REASON_BY_METHOD.get(selection.method, NoMatchReason.NO_CHAIN),
-                f"no match for {selection.method}",
+                no_match_detail(selection, sib_strikes),
             )
         if self._enrich:
             picked = await self._complete_leg(picked)
