@@ -39,13 +39,12 @@ Repository = "https://github.com/szagar/contract-resolver"
 Issues = "https://github.com/szagar/contract-resolver/issues"
 
 [tool.uv.sources]
-# Co-developed siblings, pinned to their main branch (not path deps) so this repo
-# resolves cleanly when consumed as a git dependency: a relative path dep only
-# works in a co-checkout layout, which a git/CI consumer (e.g. zts-massive CI)
-# doesn't have. uv resolves each branch HEAD to a pinned commit in the consumer's
-# lockfile. Swap for published versions once they stabilize.
-security-universe = { git = "https://github.com/szagar/security-universe.git", branch = "main" }
-dxlink-client = { git = "https://github.com/szagar/dxlink-client.git", branch = "main" }
+# Co-developed siblings, pinned by tag (not path deps, not a branch) so this repo resolves
+# cleanly when consumed as a git dependency and a tag of it fixes what it was built against:
+# a relative path dep only works in a co-checkout layout, and a branch moves under a tag
+# (zts-lab HANDOFF.md §2 item 7 and §3: by tag, never by branch).
+security-universe = { git = "https://github.com/szagar/security-universe.git", tag = "v0.1.0" }
+dxlink-client = { git = "https://github.com/szagar/dxlink-client.git", tag = "v0.1.0" }
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]
