@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -117,17 +117,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dxlink-client", extras = ["tastytrade"], marker = "extra == 'broker'", git = "https://github.com/szagar/dxlink-client.git?branch=main" },
+    { name = "dxlink-client", extras = ["tastytrade"], marker = "extra == 'broker'", git = "https://github.com/szagar/dxlink-client.git?tag=v0.1.0" },
     { name = "httpx", marker = "extra == 'broker'", specifier = ">=0.26.0" },
     { name = "httpx", marker = "extra == 'massive'", specifier = ">=0.26.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "security-universe", git = "https://github.com/szagar/security-universe.git?branch=main" },
+    { name = "security-universe", git = "https://github.com/szagar/security-universe.git?tag=v0.1.0" },
 ]
 provides-extras = ["massive", "broker"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dxlink-client", extras = ["tastytrade"], git = "https://github.com/szagar/dxlink-client.git?branch=main" },
+    { name = "dxlink-client", extras = ["tastytrade"], git = "https://github.com/szagar/dxlink-client.git?tag=v0.1.0" },
     { name = "httpx", specifier = ">=0.26.0" },
     { name = "mypy", specifier = ">=2.1.0" },
     { name = "pytest", specifier = ">=9.1.1" },
@@ -139,7 +139,7 @@ dev = [
 [[package]]
 name = "dxlink-client"
 version = "0.1.0"
-source = { git = "https://github.com/szagar/dxlink-client.git?branch=main#9819e1cd88a16b4666ceb4d6a343285e1be95ab5" }
+source = { git = "https://github.com/szagar/dxlink-client.git?tag=v0.1.0#7b61041a4b8eb1d565a6305ea7659accecd28c87" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -627,7 +627,7 @@ wheels = [
 [[package]]
 name = "security-universe"
 version = "0.1.0"
-source = { git = "https://github.com/szagar/security-universe.git?branch=main#a33fda00763557d02b02e6729a8c0d9428598026" }
+source = { git = "https://github.com/szagar/security-universe.git?tag=v0.1.0#81768a0c50cf65646f8db1655febf6d57c023bf6" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
